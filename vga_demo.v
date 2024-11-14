@@ -19,8 +19,8 @@ module vga_demo(CLOCK_50, SW, KEY, HEX3, HEX2, HEX1, HEX0,
     wire [7:0] X;
     wire [6:0] Y;
     assign colour = 0;
-	 inout PS2_CLK, PS2_DAT;
-	 wire start;
+	inout PS2_CLK, PS2_DAT;
+	wire start;
 	 
 	 PS2_Comm comm(
         .CLOCK_50(CLOCK_50),
