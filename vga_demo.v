@@ -175,7 +175,7 @@ module counter(clock, reset, count);
 	begin
 		if (reset[0] == 0 || enable)
 			// reset to initial image with 
-			fastcount <= 26'd4;
+			fastcount <= 26'd25000000;
 		else 
 			fastcount <= fastcount - 1'b1;
 			
