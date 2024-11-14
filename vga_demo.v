@@ -1,12 +1,3 @@
-/*
-*   Displays a coloured pattern on the VGA output, which is a large green triangle.
-*   Then, allows the user to draw coloured pixels at any x, y coordinates. To set
-*   a coordinate, first place the desired value of y onto SW[6:0] and then press KEY[1]
-*   to store this value into a register. Next, place the desired value of x onto SW[7:0]
-*   and then press KEY[2] to store this into a register. Finally, place the desired 
-*   3-bit colour onto SW[2:0] and press KEY[3] to draw the selected pixel. The x 
-*   coordinate is displayed (in hexadecimal) on HEX3-2, and y coordinate on HEX1-0.
-*/
 module vga_demo(CLOCK_50, SW, KEY, HEX3, HEX2, HEX1, HEX0,
                 VGA_R, VGA_G, VGA_B,
                 VGA_HS, VGA_VS, VGA_BLANK_N, VGA_SYNC_N, VGA_CLK, LEDR, PS2_CLK, PS2_DAT);
@@ -45,28 +36,28 @@ module vga_demo(CLOCK_50, SW, KEY, HEX3, HEX2, HEX1, HEX0,
 	 
 
 
-//    vga_adapter VGA (
-//        .resetn(KEY[0]),
-//        .clock(CLOCK_50),
-//        .colour(colour),
-//        .x(X),
-//        .y(Y),
-//        .plot(~KEY[3]),
-//        .VGA_R(VGA_R),
-//        .VGA_G(VGA_G),
-//        .VGA_B(VGA_B),
-//        .VGA_HS(VGA_HS),
-//        .VGA_VS(VGA_VS),
-//        .VGA_BLANK_N(VGA_BLANK_N),
-//        .VGA_SYNC_N(VGA_SYNC_N),
-//        .VGA_CLK(VGA_CLK),
-//		  .VGAstate(VGAstate));
-//        defparam VGA.RESOLUTION = "160x120";
-//        defparam VGA.MONOCHROME = "FALSE";
-//        defparam VGA.BITS_PER_COLOUR_CHANNEL = 1;
-//        defparam VGA.BACKGROUND_IMAGE = "title1.colour.mif";
-//		  defparam VGA.BACKGROUND_IMAGE2 = "title2.colour.mif";
-//		  defparam VGA.BACKGROUND_IMAGE3 = "gameScreen.colour.mif";
+   vga_adapter VGA (
+       .resetn(KEY[0]),
+       .clock(CLOCK_50),
+       .colour(colour),
+       .x(X),
+       .y(Y),
+       .plot(~KEY[3]),
+       .VGA_R(VGA_R),
+       .VGA_G(VGA_G),
+       .VGA_B(VGA_B),
+       .VGA_HS(VGA_HS),
+       .VGA_VS(VGA_VS),
+       .VGA_BLANK_N(VGA_BLANK_N),
+       .VGA_SYNC_N(VGA_SYNC_N),
+       .VGA_CLK(VGA_CLK),
+	   .VGAstate(VGAstate));
+	defparam VGA.RESOLUTION = "160x120";
+	defparam VGA.MONOCHROME = "FALSE";
+	defparam VGA.BITS_PER_COLOUR_CHANNEL = 1;
+	defparam VGA.BACKGROUND_IMAGE = "title1.colour.mif";
+	defparam VGA.BACKGROUND_IMAGE2 = "title2.colour.mif";
+	defparam VGA.BACKGROUND_IMAGE3 = "gameScreen.colour.mif";
 		  
 	wire [1:0] count;
 	wire [1:0] VGAstate;
@@ -123,10 +114,12 @@ endmodule
 
 module fsm(clock, reset, switch, count, state, VGAstate, start);
 	input clock, reset, switch, count, start;
-	parameter T1 = 4'b0001, T2 = 4'b0010, gameStart = 4'b0011;
+	//T1 - Title Screen W/O Text State, T2 - Title Screen With Text Stete, gameStart - Game Start State
+	parameter T1 = 4'b0001, T2 = 4'b0010, gameStart = 4'b0011; 
 	reg [3:0] currentState, nextState;
 	output reg [3:0] state;
 	output reg [2:0] VGAstate;
+	
 	always@ (posedge clock)
 		begin: state_table
 		case (currentState)
@@ -148,6 +141,7 @@ module fsm(clock, reset, switch, count, state, VGAstate, start);
 					nextState <= T2;
 		endcase
 		end
+	
 	always @(posedge clock)
 	begin: state_FFs
 		state <= currentState;
@@ -158,11 +152,11 @@ module fsm(clock, reset, switch, count, state, VGAstate, start);
 	end
 	
 	always@(posedge clock)
-	begin
+	begin 
 		case (currentState)
-			T1: VGAstate <= 2'b01;
-			T2: VGAstate <= 2'b00;
-			gameStart: VGAstate <= 2'b10;
+			T1: VGAstate <= 2'b01; //Sets VGA State to Title Screen W/O Text
+			T2: VGAstate <= 2'b00; //Sets VGA State to Title Screen With Text
+			gameStart: VGAstate <= 2'b10; //Sets VGA State to Game Screen
 		endcase
 	end
 	
