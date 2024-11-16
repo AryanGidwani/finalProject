@@ -112,13 +112,16 @@ endmodule
 //endmodule
 
 
-module fsm(clock, reset, switch, count, state, VGAstate, start);
-	input clock, reset, switch, count, start;
+module fsm(clock, reset, count, state, VGAstate, start, dcount, denable, endGame);
+	input clock, reset, count, start, dcount;
 	//T1 - Title Screen W/O Text State, T2 - Title Screen With Text Stete, gameStart - Game Start State
-	parameter T1 = 4'b0001, T2 = 4'b0010, gameStart = 4'b0011; 
+	parameter T1 = 4'b0001, T2 = 4'b0010, gameStart = 4'b0011, DrawB = 4'b0100, DrawBWait = 4'b0101, DrawP = 4'b0110, DrawPWait = 4'b0111;
+	parameter DrawH = 4'b1000, DrawHWait = 4'b1001, DrawC = 4'b1010, DrawCWait = 4'b1011, UpdateState = 4'b1100, gameEnd = 4'b1101;
 	reg [3:0] currentState, nextState;
 	output reg [3:0] state;
 	output reg [2:0] VGAstate;
+	output reg denable;
+	input endGame;
 	
 	always@ (posedge clock)
 		begin: state_table
@@ -127,18 +130,62 @@ module fsm(clock, reset, switch, count, state, VGAstate, start);
 					nextState <= T2;
 				 else if (start == 1)
 					nextState <= gameStart;
-				
 				 else 
 					nextState <= T1;
 			
 			T2: if (count == 1) 
 					nextState <= T1;
-					
 				 else if (start == 1)
 					nextState <= gameStart;
-					
 				else
 					nextState <= T2;
+
+			gameStart: nextState <= DrawB;
+
+			DrawB: if(dcount == 1)
+						nextState <= DrawBWait;
+					else
+						nextState <= DrawB;
+
+			DrawBWait: if(dcount == 0)
+							nextState <= DrawP;
+						else
+							nextState <= DrawBWait;
+
+			DrawP: if(dcount == 1)
+						nextState <= DrawPWait;
+					else
+						nextState <= DrawP;
+
+			DrawPWait: if(dcount == 0)
+							nextState <= DrawH;
+						else
+							nextState <= DrawPWait;
+			
+			DrawH: if(dcount == 1)
+						nextState <= DrawHWait;
+					else
+						nextState <= DrawH;
+
+			DrawHWait: if(dcount == 0)
+							nextState <= DrawC;
+						else
+							nextState <= DrawHWait;
+
+			DrawC: if(dcount == 1)
+						nextState <= DrawCWait;
+					else
+						nextState <= DrawC;
+
+			DrawCWait: if(dcount == 0)
+							nextState <= UpdateState;
+						else
+							nextState <= DrawCWait;
+			
+			UpdateState: if(endGame == 1)
+							nextState <= gameEnd;
+						else
+							nextState <= DrawB;
 		endcase
 		end
 	
@@ -154,9 +201,29 @@ module fsm(clock, reset, switch, count, state, VGAstate, start);
 	always@(posedge clock)
 	begin 
 		case (currentState)
-			T1: VGAstate <= 2'b01; //Sets VGA State to Title Screen W/O Text
+			T1: begin
+				VGAstate <= 2'b01; //Sets VGA State to Title Screen W/O Text
+				denable <= 1'b0;
+			end
+		
 			T2: VGAstate <= 2'b00; //Sets VGA State to Title Screen With Text
-			gameStart: VGAstate <= 2'b10; //Sets VGA State to Game Screen
+
+			gameStart: begin
+				VGAstate <= 2'b10; //Sets VGA State to Game Screen
+				denable <= 1'b0;
+			end
+
+			DrawB: denable <= 1'b1;
+			DrawBWait: denable <= 1'b0;
+
+			DrawP: denable <= 1'b1;
+			DrawPWait: denable <= 1'b0;
+
+			DrawH: denable <= 1'b1;
+			DrawHWait: denable <= 1'b0;
+
+			DrawC: denable <= 1'b1;
+			DrawCWait: denable <= 1'b0;
 		endcase
 	end
 	
@@ -189,6 +256,37 @@ module counter(clock, reset, count);
 		else if (enable == 1)
 			// display image without play text
 			count <= count + 1;
+	end
+endmodule
+
+module downCounter(clock, reset, dcount, enable);
+	input [0:0] reset;
+	input clock;
+	reg [25:0] fastcount;
+	output reg [1:0] dcount;
+	input enable;
+	
+	always@(posedge clock)
+	begin
+		if (reset[0] == 0 || enable)
+			// Resets downcounter if it gets reset or enabled
+			// Counts from 500,000 -> 0. Takes around 10ms, faster than the refresh rate of the VGA (60Hz = 16.67ms/refresh)
+			fastcount <= 26'd500000;
+		else 
+			// Every other time the downcounter is counting down
+			fastcount <= fastcount - 1'b1;
+			
+	end
+	
+	always@(posedge clock)
+	begin
+		// dcount = 0 if couting down is finished, 1 if down counter is still counting
+		if (reset[0] == 0 || enable)
+			// Resets dcount to 1 to start count down
+			dcount <= 1'b1;
+		else if (fastcount == 1'b0)
+			// Once the fastcounter is done counting, set dcount to 0
+			dcount <= 1'b0;
 	end
 endmodule
 
