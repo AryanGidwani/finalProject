@@ -89,6 +89,7 @@ module vga_adapter(
 	 
 	parameter BACKGROUND_IMAGE2 = "background.mif";
 	parameter BACKGROUND_IMAGE3 = "background.mif";
+	parameter BACKGROUND_IMAGE4 = "background.mif";
 	/*****************************************************************************/
 	/* Declare inputs and outputs.                                               */
 	/*****************************************************************************/
@@ -137,6 +138,7 @@ module vga_adapter(
 	wire [((MONOCHROME == "TRUE") ? (0) : (BITS_PER_COLOUR_CHANNEL*3-1)):0] to_ctrl_colour;
 	wire [((MONOCHROME == "TRUE") ? (0) : (BITS_PER_COLOUR_CHANNEL*3-1)):0] to_ctrl_colour2;
 	wire [((MONOCHROME == "TRUE") ? (0) : (BITS_PER_COLOUR_CHANNEL*3-1)):0] to_ctrl_colour3; 
+	wire [((MONOCHROME == "TRUE") ? (0) : (BITS_PER_COLOUR_CHANNEL*3-1)):0] to_ctrl_colour4; 
 	/* Pixel colour read by the VGA controller */
 	
 	wire [((RESOLUTION == "320x240") ? (16) : (14)):0] user_to_video_memory_addr;
@@ -173,7 +175,7 @@ module vga_adapter(
 	altsyncram	VideoMemory (
 				.wren_a (writeEn),
 				.wren_b (gnd),
-				.clock0 (clock), // write clock
+				.clock0 (gnd), // write clock
 				.clock1 (clock_25), // read clock
 				.clocken0 (vcc), // write enable clock
 				.clocken1 (vcc), // read enable clock				
@@ -204,7 +206,7 @@ module vga_adapter(
 	altsyncram	VideoMemory2 (
 				.wren_a (writeEn),
 				.wren_b (gnd),
-				.clock0 (clock), // write clock
+				.clock0 (gnd), // write clock
 				.clock1 (clock_25), // read clock
 				.clocken0 (vcc), // write enable clock
 				.clocken1 (vcc), // read enable clock				
@@ -261,6 +263,36 @@ module vga_adapter(
 		VideoMemory3.init_file = BACKGROUND_IMAGE3; // second image
 		
 		
+	altsyncram	VideoMemory4 (
+				.wren_a (writeEn),
+				.wren_b (gnd),
+				.clock0 (gnd), // write clock
+				.clock1 (clock_25), // read clock
+				.clocken0 (vcc), // write enable clock
+				.clocken1 (vcc), // read enable clock				
+				.address_a (user_to_video_memory_addr),
+				.address_b (controller_to_video_memory_addr),
+				.data_a (colour), // data in
+				.q_b (to_ctrl_colour4)	// data out
+				);
+	defparam
+		VideoMemory4.width_a = ((MONOCHROME == "FALSE") ? (BITS_PER_COLOUR_CHANNEL*3) : 1),
+		VideoMemory4.width_b = ((MONOCHROME == "FALSE") ? (BITS_PER_COLOUR_CHANNEL*3) : 1),
+		VideoMemory4.intended_device_family = "Cyclone II",
+		VideoMemory4.operation_mode = "DUAL_PORT",
+		VideoMemory4.widthad_a = ((RESOLUTION == "320x240") ? (17) : (15)),
+		VideoMemory4.numwords_a = ((RESOLUTION == "320x240") ? (76800) : (19200)),
+		VideoMemory4.widthad_b = ((RESOLUTION == "320x240") ? (17) : (15)),
+		VideoMemory4.numwords_b = ((RESOLUTION == "320x240") ? (76800) : (19200)),
+		VideoMemory4.outdata_reg_b = "CLOCK1",
+		VideoMemory4.address_reg_b = "CLOCK1",
+		VideoMemory4.clock_enable_input_a = "BYPASS",
+		VideoMemory4.clock_enable_input_b = "BYPASS",
+		VideoMemory4.clock_enable_output_b = "BYPASS",
+		VideoMemory4.power_up_uninitialized = "FALSE",
+		VideoMemory4.init_file = BACKGROUND_IMAGE4; // second image
+		
+		
 		
 	/* This module generates a clock with half the frequency of the input clock.
 	 * For the VGA adapter to operate correctly the clock signal 'clock' must be
@@ -278,8 +310,10 @@ module vga_adapter(
 
 		else if (VGAstate == 2'b00) 
 			colourIn <= to_ctrl_colour2;
-		else 
+		else if (VGAstate == 2'b10)
 			colourIn <= to_ctrl_colour3;
+		else
+			colourIn <= to_ctrl_colour4;
 	end
 			
 	vga_controller controller(
