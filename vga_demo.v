@@ -4,7 +4,7 @@ module vga_demo(CLOCK_50, SW, KEY, HEX3, HEX2, HEX1, HEX0,
     
     input CLOCK_50;    
     input [9:0] SW;
-     output [9:0] LEDR;
+    output [9:0] LEDR;
     input [3:0] KEY;
     output [6:0] HEX3, HEX2, HEX1, HEX0;
     output [7:0] VGA_R;
@@ -19,7 +19,7 @@ module vga_demo(CLOCK_50, SW, KEY, HEX3, HEX2, HEX1, HEX0,
     wire [7:0] X_FSM, objX, BGX;
     wire [6:0] Y_FSM, objY, BGY;
     inout PS2_CLK, PS2_DAT;
-    wire start, moveUp;
+    wire start, moveUp, moveDown;
     wire BGPlotVGA, objPlotVGA;
     
     reg [2:0] colour;
@@ -35,11 +35,9 @@ module vga_demo(CLOCK_50, SW, KEY, HEX3, HEX2, HEX1, HEX0,
  
         .PS2_CLK(PS2_CLK),
         .PS2_DAT(PS2_DAT),
- 
-        .HEX0(HEX0),
-        .HEX1(HEX1),
           .start(start),
-          .moveUp(moveUp)
+          .moveUp(moveUp),
+			 .moveDown(moveDown)
     );
      
  
@@ -66,6 +64,7 @@ module vga_demo(CLOCK_50, SW, KEY, HEX3, HEX2, HEX1, HEX0,
     defparam VGA.BACKGROUND_IMAGE = "title1.colour.mif";
     defparam VGA.BACKGROUND_IMAGE2 = "title2.colour.mif";
     defparam VGA.BACKGROUND_IMAGE3 = "gameScreen.colour.mif";
+	 defparam VGA.BACKGROUND_IMAGE4 = "gameOver.colour.mif";
           
     wire [1:0] count;
     wire [1:0] VGAstate;
@@ -73,14 +72,27 @@ module vga_demo(CLOCK_50, SW, KEY, HEX3, HEX2, HEX1, HEX0,
     wire dcount, denable, objPlot, objToPlot, BGPlot;
     wire resetCountersFSM, resetCounters;
 	 wire [25:0] cyc; //cylces
-    
-    fsm U1(CLOCK_50, KEY[0], count[0], state, VGAstate, start, dcount, denable, 0, X_FSM, Y_FSM, objPlot, BGPlot, objToPlot, cyc); // ~KEY[3]: doPlot, SW[9]: objToPlot
+	 wire [1:0] HoopPos;
+	 wire countScore;
+	 wire [5:0] val, timerVal;
+    wire scoreEnable, gameStarted, gameEnded, resetTimer;
+    fsm U1(CLOCK_50, KEY[0], count[0], state, VGAstate, start, dcount, denable, gameEnded, X_FSM, Y_FSM, objPlot, BGPlot, objToPlot, cyc, moveUp, moveDown, HoopPos, scoreEnable, gameStarted, resetTimer); // ~KEY[3]: doPlot, SW[9]: objToPlot
     counter U2(CLOCK_50, KEY[0], count);
     downCounter U3(CLOCK_50, KEY[0], dcount, denable, cyc);
     plotObj U4(Y_FSM, X_FSM, objPlot, KEY[0], objToPlot, CLOCK_50, objX, objY, objPlotVGA, obj_C);
     drawBG U5(BGPlot, CLOCK_50, KEY[0], BGX, BGY, BGPlotVGA);
 	 
-    
+	 randomCount random(CLOCK_50, KEY[0], count, HoopPos);
+	 scoreCounter score(CLOCK_50, KEY[0], scoreEnable, val);
+	 gameTimer gameTime(CLOCK_50, KEY[0] & resetTimer, gameStarted, timerVal, gameEnded);
+	 hex7seg H1(timerVal[3:0], HEX0);
+	 hex7seg H2({2'b00, timerVal[5:4]}, HEX1);
+	 
+	 
+	 
+	 assign LEDR[5:0] = val;
+    assign LEDR[6] = scoreEnable;
+	 assign LEDR[9] = gameEnded;
     always@(posedge CLOCK_50) begin
         if(objPlot == 1) begin
             X <= objX;
@@ -96,27 +108,25 @@ module vga_demo(CLOCK_50, SW, KEY, HEX3, HEX2, HEX1, HEX0,
         end
 		  else plot <= 0;
     end
-    
-    assign LEDR[9:6] = state[3:0];
-    assign LEDR[0] = BGPlot;
           
 endmodule
  
-module fsm(clock, reset, count, state, VGAstate, start, dcount, denable, endGame, x, y, plot, BGplot, objToPlot, cycles);
-    input clock, reset, count, start, dcount;
+module fsm(clock, reset, count, state, VGAstate, start, dcount, denable, endGame, x, y, plot, BGplot, objToPlot, cycles, moveUp, moveDown, HoopPos, scoreEnable, gameStarted, resetTimer);
+    input clock, reset, count, start, dcount, moveUp, moveDown;
     //T1 - Title Screen W/O Text State, T2 - Title Screen With Text Stete, gameStart - Game Start State
     parameter T1 = 4'b0001, T2 = 4'b0010, gameStart = 4'b0011, DrawB = 4'b0100, DrawBWait = 4'b0101, DrawP = 4'b0110, DrawPWait = 4'b0111;
     parameter DrawH = 4'b1000, DrawHWait = 4'b1001, DrawC = 4'b1010, DrawCWait = 4'b1011, UpdateState = 4'b1100, UpdateWState = 4'b1101, gameEnd = 4'b1110;
-	 parameter background = 26'd19205, ball = 26'd261, hoop = 26'd1029, update = 26'd814005; // paramaters used for object down counter
+	 parameter background = 26'd19225, ball = 26'd261, hoop = 26'd1029, update = 26'd813000; // paramaters used for object down counter
     reg [3:0] currentState, nextState;
     output reg [3:0] state;
     output reg [2:0] VGAstate;
     output reg denable;
     output reg [7:0] x;
     output reg [6:0] y;
-    output reg plot, objToPlot, BGplot;
+    output reg plot, objToPlot, BGplot, gameStarted, resetTimer;
 	 output reg [25:0] cycles;
-    input endGame;
+    input endGame; 
+	 input [1:0] HoopPos;
     
     always@ (posedge clock)
         begin: state_table
@@ -183,8 +193,11 @@ module fsm(clock, reset, count, state, VGAstate, start, dcount, denable, endGame
                             nextState <= UpdateState;
 				UpdateWState: if (dcount == 0) // delay time
 									 nextState <= DrawB;
+								  else if (endGame == 1'b1)
+									 nextState <= gameEnd;
 								  else 
 									 nextState <= UpdateWState;
+				
 				
         endcase
         end
@@ -199,6 +212,9 @@ module fsm(clock, reset, count, state, VGAstate, start, dcount, denable, endGame
     end
     reg [6:0] ballY;
     reg [7:0] hoopX;
+	 reg [6:0] hoopY;
+	 reg check;
+	 output reg scoreEnable;
     always@(posedge clock)
     begin 
         case (currentState)
@@ -206,9 +222,13 @@ module fsm(clock, reset, count, state, VGAstate, start, dcount, denable, endGame
                 VGAstate <= 2'b01; //Sets VGA State to Title Screen W/O Text
                 denable <= 1'b0;
                 hoopX <= 0;
-                ballY <= 0;
+                ballY <= 7'd90;
                 plot <= 0;
                 BGplot <= 0; 
+					 check <= 0;
+					 scoreEnable <= 0;
+					 gameStarted <= 0;
+					 resetTimer <= 0; // 0 resets it
             end
         
             T2: VGAstate <= 2'b00; //Sets VGA State to Title Screen With Text
@@ -220,6 +240,7 @@ module fsm(clock, reset, count, state, VGAstate, start, dcount, denable, endGame
                 ballY <= 0;
                 plot <= 0;
                 BGplot <= 0;
+					 gameStarted <= 1'b1;
             end
  
             DrawB: begin 
@@ -227,6 +248,7 @@ module fsm(clock, reset, count, state, VGAstate, start, dcount, denable, endGame
                 BGplot <= 1'b0;
                 plot <= 0;
 					 cycles <= background;
+					 resetTimer <= 1;
             end
             
             DrawBWait:  begin 
@@ -240,7 +262,7 @@ module fsm(clock, reset, count, state, VGAstate, start, dcount, denable, endGame
                      BGplot <= 0;
                      objToPlot <= 1; // 1 for ball
                      x <= 8'd30;
-                     y <= 7'd100; // update module
+                     y <= ballY; // update module
 							cycles <= ball;
                      end
             DrawPWait: begin 
@@ -253,7 +275,7 @@ module fsm(clock, reset, count, state, VGAstate, start, dcount, denable, endGame
                      plot <= 0;
                      objToPlot <= 0; // 0 for hoop 
                      x <= hoopX; // update module
-                     y <= 7'd60;
+                     y <= hoopY; // y [
 							cycles <= hoop;
                      end
             DrawHWait: begin 
@@ -266,11 +288,35 @@ module fsm(clock, reset, count, state, VGAstate, start, dcount, denable, endGame
             
             UpdateState: begin
 									denable <= 1'b1;
-									hoopX <= hoopX - 1; // move hoop to the left
 									cycles <= update;
+									check <= check + 1;
+									if (check == 1'b1)
+										hoopX <= hoopX - 1; // move hoop to the left
+									if (moveUp == 1'b1) 
+										ballY <= ballY - 1;
+									if (moveDown == 1'b1)
+										ballY <= ballY + 1;
+									if(hoopX >= 8'd160 & hoopX <= 8'd190)
+										case(HoopPos)
+											2'b00: hoopY <= 7'd10;
+											2'b01: hoopY <= 7'd35;
+											2'b10: hoopY <= 7'd60;
+											2'b11: hoopY <= 7'd85;
+											default: hoopY <= 7'd60;
+										endcase
+									
+									if ((hoopY <= ballY) & (ballY <= (hoopY + 7'd13)) & (hoopX <= 8'd39) & (8'd39 <= (hoopX + 3'd3)))
+										scoreEnable <= 1;
+									else
+										scoreEnable <= 0;
 								end
 				UpdateWState: denable <= 1'b0;
-                     
+				
+				gameEnd: begin 
+					VGAstate <= 2'b11;
+					gameStarted <= 1'b0;
+				end
+
         endcase
     end
     
@@ -453,6 +499,17 @@ module count (Clock, Resetn, E, Q);
         else if (E)
             Q <= Q + 1;
 endmodule
+
+module randomCount (Clock, Resetn, E, Q); // random chosen position for hoop
+    input Clock, Resetn, E;
+    output reg [1:0] Q;
+ 
+    always @ (posedge Clock)
+        if (Resetn == 0)
+            Q <= 0;
+        else if (E)
+            Q <= Q + 1'b1;
+endmodule
  
 module drawBG(plot, CLOCK_50, resetin, VGA_X, VGA_Y, doPlot);
     input plot, resetin, CLOCK_50;
@@ -472,7 +529,7 @@ module drawBG(plot, CLOCK_50, resetin, VGA_X, VGA_Y, doPlot);
     countY C2(CLOCK_50, resetin, reset, Ey, VGA_Y);
 endmodule
  
-module countX(clock, resetin, reset, E, Q);
+module countX(clock, resetin, reset, E, Q); // counter for drawing in horizontal direction
     input clock, reset, E, resetin;
     output reg [7:0] Q;
     
@@ -483,7 +540,7 @@ module countX(clock, resetin, reset, E, Q);
             Q <= Q + 1;
 endmodule
  
-module countY(clock, resetin, reset, E, Q);
+module countY(clock, resetin, reset, E, Q); // counter for drawing in vertical direction
     input clock, reset, E, resetin;
     output reg [6:0] Q;
     
@@ -494,3 +551,89 @@ module countY(clock, resetin, reset, E, Q);
             Q <= Q + 1;
 endmodule
 
+module scoreCounter(CLOCK_50, reset, enable, val);
+	input CLOCK_50, enable, reset;
+	output reg [5:0] val;
+	reg current, prev;
+	
+	always@(posedge CLOCK_50)
+	begin
+		prev <= current;
+		current <= enable;
+		if(reset == 0)
+			val <= 0;
+		else if(prev == 0 & current == 1) // preventing score incrementing multiple times
+			val <= val + 1; // increment score
+	end
+endmodule
+
+
+module gameTimer(CLOCK_50, reset, enable, val, gameEnded); // 60 second counter
+	input CLOCK_50, reset, enable;
+	output reg [5:0] val;
+	output reg gameEnded;
+	reg [25:0] fastcount;
+	
+	always@(posedge CLOCK_50)
+    begin
+        if (reset == 0 | fastcount == 1'b0)
+            fastcount <= 26'd50000000;
+        else if(enable)
+            fastcount <= fastcount - 1'b1;   
+    end
+    
+    always@(posedge CLOCK_50)
+    begin
+		  if (val == 7'h3F)
+			gameEnded <= 0; 
+	 
+		  if (val == 0)
+					gameEnded <= 1;
+        if (reset == 0) begin
+            val <= 6'd60; // start from 60
+				gameEnded <= 0;
+			end
+        else if (fastcount == 1'b0)
+            val <= val - 1;
+    end
+endmodule
+
+module hex7seg (hex, display);
+    input [3:0] hex;
+    output [6:0] display;
+
+    reg [6:0] display;
+
+    /*
+     *       0  
+     *      ---  
+     *     |   |
+     *    5|   |1
+     *     | 6 |
+     *      ---  
+     *     |   |
+     *    4|   |2
+     *     |   |
+     *      ---  
+     *       3  
+     */
+    always @ (hex)
+        case (hex)
+            4'h0: display = 7'b1000000;
+            4'h1: display = 7'b1111001;
+            4'h2: display = 7'b0100100;
+            4'h3: display = 7'b0110000;
+            4'h4: display = 7'b0011001;
+            4'h5: display = 7'b0010010;
+            4'h6: display = 7'b0000010;
+            4'h7: display = 7'b1111000;
+            4'h8: display = 7'b0000000;
+            4'h9: display = 7'b0011000;
+            4'hA: display = 7'b0001000;
+            4'hB: display = 7'b0000011;
+            4'hC: display = 7'b1000110;
+            4'hD: display = 7'b0100001;
+            4'hE: display = 7'b0000110;
+            4'hF: display = 7'b0001110;
+        endcase
+endmodule
