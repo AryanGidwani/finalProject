@@ -10,10 +10,9 @@ module PS2_Comm(
     PS2_DAT,
 
     // outputs
-    HEX0,
-    HEX1,
 	 start,
-	 moveUp
+	 moveUp,
+	 moveDown
 
 );
 
@@ -37,9 +36,6 @@ inout	wire			PS2_DAT;
 
 
 // Outputs
-output	wire	[6:0]	HEX0;
-output	wire 	[6:0]	HEX1;
-assign HEX1 = 7'b1111111;
 
 /*****************************************************************************
  *                 Internal Wires and Registers Declarations                 *
@@ -53,6 +49,7 @@ wire command_was_sent;
 
 // Internal Registers
 reg [7:0] last_data_received;
+reg [7:0] prev_data_received;
 reg [2:0] counter;
 // State Machine Registers
 
@@ -70,11 +67,13 @@ reg [2:0] counter;
 always @(posedge CLOCK_50)
 begin
 	if (KEY[0] == 1'b0) begin
+		prev_data_received <= 8'h00;
 		last_data_received <= 8'h00;
 		counter <= 0;
 	end
 		
 	else if (ps2_key_pressed == 1'b1) begin
+		prev_data_received <= last_data_received;
 		last_data_received <= ps2_key_data;
 			
 		if(counter == 3'd6)
@@ -114,82 +113,71 @@ PS2_Controller PS2 (
 	.received_data_en	(ps2_key_pressed)
 );
 
-output start, moveUp; //Start game signal
-Hex_To_Letter Segment0 (CLOCK_50, last_data_received, HEX0, start, moveUp);
+output start; //Start game signal
+output moveUp, moveDown;
 
+wire halfClk;
+Hex_To_Letter Segment0 (CLOCK_50, last_data_received, start);
+PS2FSM FSM(CLOCK_50, KEY[0], last_data_received, prev_data_received, moveUp, moveDown);
+clockCounter halfclock(CLOCK_50, KEY[0], halfClk);
 
 endmodule
 
-module Hex_To_Letter(clock, last_data_received, out, start);
+module Hex_To_Letter(clock, last_data_received, start);
 	input clock;
 	input wire [7:0] last_data_received;
-	output reg [6:0] out;
 	output reg start;
 
-	parameter [7:0] W = 8'h1D, A = 8'h1C, S = 8'h1B, D = 8'h23, P = 8'h4D;
+	parameter [7:0] W = 8'h1D, A = 8'h1C, S = 8'h1B, D = 8'h23, P = 8'h4D, Space = 8'h29;
 	always@(posedge clock) begin
 		case(last_data_received)
-			W: out <= 7'b0000000;
-			A: out <= 7'b0001000;
-			S: out <= 7'b0010010;
-			D: out <= 7'b0100001;
 			P: start <= 1;
-			Space: moveUp <= 1;
 			default: begin 
 			start <= 0;
 			end
 		endcase
 	end
 
-
-
 endmodule
 
-module PS2FSM(clock, last_data_received, out, moveUp);
-	input clock;
-	input wire [7:0] last_data_received;
-	output reg [6:0] out;
-	output reg moveUp;
+module PS2FSM(clock, reset, last_data_received, prev_data_received, moveUp, moveDown);
+	input clock, reset;
+	input wire [7:0] last_data_received, prev_data_received;
+	output reg moveUp, moveDown;
 	reg [3:0] currentState, nextState;
-	parameter [3:0] S1 = 4'b0000, S2 = 4'b0001, S3 = 4'b0010, S4 = 4'b0011, S5 = 4'b0100; 
-	parameter [7:0] W = 8'h1D, A = 8'h1C, S = 8'h1B, D = 8'h23, P = 8'h4D, Space = 8'h29, F = 8'hF0;
+	parameter [1:0] S1 = 2'b00, S2 = 2'b01, S3 = 2'b10, S4 = 2'b11; 
+	parameter [7:0] W = 8'h1D, A = 8'h1C, S = 8'h1B, D = 8'h23, P = 8'h4D, F = 8'hF0;
 	
 	always@ (posedge clock)
 		begin: state_table
 		case (currentState)
-			S1: if(last_data_received == Space) 
-					nextState <= S2;
-				 else if(last_data_received == F)
-					nextState <= S4;
-					
-			S2: if(last_data_received == Space) 
-					nextState <= S2;
-				 else if(last_data_received == F)
+			S1: if((prev_data_received == W | prev_data_received == P | prev_data_received == S) & last_data_received == W) 
+					nextState <= S2; // go to next state
+				 else if ((prev_data_received == W | prev_data_received == S | prev_data_received == P) & last_data_received == S)
 					nextState <= S3;
+				 else 
+					nextState <= S1;
 					
-			S3: if(last_data_received == Space) 
-					nextState <= S5;
-				 else if(last_data_received == F)
+			S2: if(last_data_received == F) 
+					nextState <= S4;
+				 else 
+					nextState <= S2;
+					
+			S3: if (last_data_received == F)
+					nextState <= S4;
+				 else
 					nextState <= S3;
 			
-			S4: if(last_data_received == Space) 
-					nextState <= S5;
-				 else if(last_data_received == F)
-					nextState <= S4;
-			
-			S5: if(last_data_received == Space) 
-					nextState <= S2;
-				 else if(last_data_received == F)
-					nextState <= S3;
+			S4: nextState <= S1;
+
 			default: nextState <= S1;
 		endcase
 		end
 		
 		always @(posedge clock)
 		begin: state_FFs
-			state <= currentState;
 			if (!reset)
-				currentState <= T1;
+				currentState <= S1;
 			else
 				currentState <= nextState;
 		end
@@ -197,9 +185,39 @@ module PS2FSM(clock, last_data_received, out, moveUp);
 		always@(posedge clock)
 		begin 
 		case (currentState)
-			S1: moveUp <= 0;
-			S3: moveUp <= 1;
-			S5: moveUp <= 0;
+			S1: begin
+					moveUp <= 0;
+					moveDown <= 0;
+				 end
+			S2: moveUp <= 1; // update signal in the state
+			S3: moveDown <= 1; // sending correct signal
 		endcase
 		end
+endmodule
+
+module clockCounter(clock, reset, count);
+    input [0:0] reset;
+    input clock;
+    reg [0:0] fastcount;
+    output reg [0:0] count;
+    wire enable;
+    
+    assign enable = (fastcount == 0) ? 1 : 0; 
+    always@(posedge clock)
+    begin
+        if (reset[0] == 0)
+            // reset to initial image with 
+            fastcount <= 0;
+        else 
+            fastcount <= fastcount + 1'b1;
+            
+    end
+    
+    always@(posedge clock)
+    begin
+        if (reset[0] == 0)
+            count <= 0;
+        else if (enable == 1)
+            count <= count + 1;
+    end
 endmodule
