@@ -76,6 +76,7 @@ module vga_demo(CLOCK_50, SW, KEY, HEX3, HEX2, HEX1, HEX0,
 	 wire countScore;
 	 wire [5:0] val, timerVal;
     wire scoreEnable, gameStarted, gameEnded, resetTimer;
+	
     fsm U1(CLOCK_50, KEY[0], count[0], state, VGAstate, start, dcount, denable, gameEnded, X_FSM, Y_FSM, objPlot, BGPlot, objToPlot, cyc, moveUp, moveDown, HoopPos, scoreEnable, gameStarted, resetTimer); // ~KEY[3]: doPlot, SW[9]: objToPlot
     counter U2(CLOCK_50, KEY[0], count);
     downCounter U3(CLOCK_50, KEY[0], dcount, denable, cyc);
@@ -636,4 +637,27 @@ module hex7seg (hex, display);
             4'hE: display = 7'b0000110;
             4'hF: display = 7'b0001110;
         endcase
+endmodule
+
+module displayNum(clock, display, num, HEX1, HEX0);
+	input clock, display;
+	input [5:0] num;
+	output reg [6:0] HEX1, HEX0;
+	reg [3:0] tensPlace;
+	reg [5:0] onesPlace;
+
+	always@(posedge clock) begin
+		if(!display) begin
+			onesPlace <= num;
+			tensPlace <= 0;
+		end
+		else begin
+			HEX1 <= tensPlace;
+			HEX0 <= onesPlace[3:0];
+			if(onesPlace >= 10) begin 
+				onesPlace <= onesPlace - 6'd10;
+				tensPlace <= tensPlace + 1;
+			end
+		end
+	end
 endmodule
